@@ -25,12 +25,13 @@ type schemaExecer interface {
 	Exec(ctx context.Context, query string, args ...any) error
 }
 
+// BuildDDL returns the CREATE TABLE IF NOT EXISTS DDL for the given table name.
 func BuildDDL(table string) string {
 	return fmt.Sprintf(createTableSQL, table)
 }
 
-func ensureSchema(ctx context.Context, exec schemaExecer, schemaConfig schemaConfig) error {
-	return exec.Exec(ctx, BuildDDL(schemaConfig.Table))
+func ensureSchema(ctx context.Context, exec schemaExecer, cfg schemaConfig) error {
+	return exec.Exec(ctx, BuildDDL(cfg.Table))
 }
 
 // RunEnsureSchema opens a temporary connection using cfg, creates the table

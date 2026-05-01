@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -94,13 +95,13 @@ func TestDefaults_AppliedOnZeroValues(t *testing.T) {
 		got   any
 		want  any
 	}{
-		{"Database", cfg.Database, "default"},
 		{"Table", cfg.Table, "ion_logs"},
 		{"Level", cfg.Level, "info"},
 		{"BatchSize", cfg.BatchSize, 1000},
 		{"FlushInterval", cfg.FlushInterval, 5 * time.Second},
 		{"ChannelBuffer", cfg.ChannelBuffer, 10000},
 		{"DialTimeout", cfg.DialTimeout, 10 * time.Second},
+		{"WriteTimeout", cfg.WriteTimeout, 30 * time.Second},
 		{"MaxOpenConns", cfg.MaxOpenConns, 5},
 		{"MaxIdleConns", cfg.MaxIdleConns, 5},
 		{"ConnMaxLifetime", cfg.ConnMaxLifetime, time.Hour},
@@ -115,7 +116,6 @@ func TestDefaults_AppliedOnZeroValues(t *testing.T) {
 func TestDefaults_UserValuesNotOverwritten(t *testing.T) {
 	cfg := config.Config{
 		DSN:           "clickhouse://localhost:9000/default",
-		Database:      "mydb",
 		Table:         "my_logs",
 		Level:         "debug",
 		BatchSize:     500,
@@ -129,7 +129,6 @@ func TestDefaults_UserValuesNotOverwritten(t *testing.T) {
 		got   any
 		want  any
 	}{
-		{"Database", cfg.Database, "mydb"},
 		{"Table", cfg.Table, "my_logs"},
 		{"Level", cfg.Level, "debug"},
 		{"BatchSize", cfg.BatchSize, 500},
@@ -162,5 +161,73 @@ func TestNew_ConnectsAndExposesConfig(t *testing.T) {
 	}
 	if core.Config.DSN != dsn {
 		t.Errorf("Config.DSN: got %q, want %q", core.Config.DSN, dsn)
+	}
+}
+
+// --- extended Validate() coverage ---
+
+func TestValidate_NegativeFlushInterval(t *testing.T) {
+	err := config.Config{DSN: "clickhouse://localhost:9000/default", FlushInterval: -1}.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative FlushInterval, got nil")
+	}
+}
+
+func TestValidate_NegativeDialTimeout(t *testing.T) {
+	err := config.Config{DSN: "clickhouse://localhost:9000/default", DialTimeout: -1}.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative DialTimeout, got nil")
+	}
+}
+
+func TestValidate_NegativeWriteTimeout(t *testing.T) {
+	err := config.Config{DSN: "clickhouse://localhost:9000/default", WriteTimeout: -1}.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative WriteTimeout, got nil")
+	}
+}
+
+func TestValidate_NegativeMaxOpenConns(t *testing.T) {
+	err := config.Config{DSN: "clickhouse://localhost:9000/default", MaxOpenConns: -1}.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative MaxOpenConns, got nil")
+	}
+}
+
+func TestValidate_NegativeMaxIdleConns(t *testing.T) {
+	err := config.Config{DSN: "clickhouse://localhost:9000/default", MaxIdleConns: -1}.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative MaxIdleConns, got nil")
+	}
+}
+
+func TestValidate_MaxIdleConnsExceedsMaxOpenConns(t *testing.T) {
+	err := config.Config{
+		DSN:          "clickhouse://localhost:9000/default",
+		MaxOpenConns: 3,
+		MaxIdleConns: 5,
+	}.Validate()
+	if err == nil {
+		t.Fatal("expected error when MaxIdleConns > MaxOpenConns, got nil")
+	}
+}
+
+func TestValidate_NegativeConnMaxLifetime(t *testing.T) {
+	err := config.Config{DSN: "clickhouse://localhost:9000/default", ConnMaxLifetime: -1}.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative ConnMaxLifetime, got nil")
+	}
+}
+
+func TestValidate_InvalidTableName(t *testing.T) {
+	cases := []string{"", "my-table", "my table", "1table", "'; DROP TABLE"}
+	for _, table := range cases {
+		table := table
+		t.Run(fmt.Sprintf("%q", table), func(t *testing.T) {
+			err := config.Config{DSN: "clickhouse://localhost:9000/default", Table: table}.Validate()
+			if err == nil {
+				t.Errorf("Validate() with table %q should return error, got nil", table)
+			}
+		})
 	}
 }

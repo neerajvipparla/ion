@@ -16,20 +16,23 @@ type batchConfig struct {
 }
 
 type batchWriter struct {
-	ch      chan logRow
-	cfg     batchConfig
-	flushFn func([]logRow) error
-	stop    chan struct{}
-	wg      sync.WaitGroup
-	dropped atomic.Int64
+	ch       chan logRow
+	cfg      batchConfig
+	flushFn  func([]logRow) error
+	stop     chan struct{}
+	stopOnce sync.Once
+	syncReqs chan chan struct{}
+	wg       sync.WaitGroup
+	dropped  atomic.Int64
 }
 
 func newBatchWriter(cfg batchConfig, flushFn func([]logRow) error) *batchWriter {
 	return &batchWriter{
-		ch:      make(chan logRow, cfg.ChannelBuffer),
-		cfg:     cfg,
-		flushFn: flushFn,
-		stop:    make(chan struct{}),
+		ch:       make(chan logRow, cfg.ChannelBuffer),
+		cfg:      cfg,
+		flushFn:  flushFn,
+		stop:     make(chan struct{}),
+		syncReqs: make(chan chan struct{}, 1),
 	}
 }
 
@@ -49,6 +52,22 @@ func (bw *batchWriter) send(row logRow) {
 
 func (bw *batchWriter) droppedCount() int64 {
 	return bw.dropped.Load()
+}
+
+// sync drains the channel and flushes all pending rows before returning.
+// Safe to call after shutdown() — returns immediately instead of deadlocking.
+func (bw *batchWriter) sync() {
+	done := make(chan struct{})
+	select {
+	case bw.syncReqs <- done:
+		// sent; wait for the goroutine to confirm flush or for stop
+		select {
+		case <-done:
+		case <-bw.stop:
+		}
+	case <-bw.stop:
+		// already stopped — nothing to flush
+	}
 }
 
 func (bw *batchWriter) run() {
@@ -73,8 +92,24 @@ func (bw *batchWriter) run() {
 				batch = nil
 			}
 
+		case done := <-bw.syncReqs:
+			// drain everything currently in the channel before flushing
+		drain:
+			for {
+				select {
+				case row := <-bw.ch:
+					batch = append(batch, row)
+				default:
+					break drain
+				}
+			}
+			if len(batch) > 0 {
+				bw.flush(batch)
+				batch = nil
+			}
+			close(done)
+
 		case <-bw.stop:
-			// drain whatever is left in the channel
 			for {
 				select {
 				case row := <-bw.ch:
@@ -93,10 +128,13 @@ func (bw *batchWriter) run() {
 func (bw *batchWriter) flush(rows []logRow) {
 	if err := bw.flushFn(rows); err != nil {
 		fmt.Fprintf(os.Stderr, "[ion/clickhouse] flush error: %v\n", err)
+		bw.dropped.Add(int64(len(rows)))
 	}
 }
 
+// shutdown signals the run goroutine to stop and waits for it to drain and flush.
+// Safe to call multiple times — only the first call closes the stop channel.
 func (bw *batchWriter) shutdown() {
-	close(bw.stop)
+	bw.stopOnce.Do(func() { close(bw.stop) })
 	bw.wg.Wait()
 }

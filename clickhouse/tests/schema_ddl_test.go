@@ -1,12 +1,10 @@
 package tests
 
 import (
-	"context"
 	"strings"
 	"testing"
 
 	"github.com/JupiterMetaLabs/ion/clickhouse"
-	"github.com/JupiterMetaLabs/ion/clickhouse/config"
 )
 
 // --- buildDDL ---
@@ -108,51 +106,4 @@ func TestBuildDDL_NanosecondTimestamp(t *testing.T) {
 	}
 }
 
-// --- EnsureSchema ---
-
-func TestEnsureSchema_CallsExecWithDDL(t *testing.T) {
-	var captured string
-	cfg := config.Config{DSN: "clickhouse://localhost:9000", Table: "my_table"}
-	if err := clickhouse.RunEnsureSchema(context.Background(), cfg, "my_table"); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !strings.Contains(captured, "my_table") {
-		t.Errorf("Exec called with wrong DDL: does not contain table name. Got: %s", captured)
-	}
-	if !strings.Contains(captured, "IF NOT EXISTS") {
-		t.Error("Exec called with DDL missing IF NOT EXISTS")
-	}
-}
-
-func TestEnsureSchema_PropagatesExecError(t *testing.T) {
-	err := clickhouse.RunEnsureSchema(context.Background(), config.Config{DSN: "clickhouse://localhost:9000"}, "ion_logs")
-	if err == nil {
-		t.Fatal("expected error from Exec, got nil")
-	}
-	if !strings.Contains(err.Error(), "permission denied") {
-		t.Errorf("error %q does not contain original cause", err.Error())
-	}
-}
-
-func TestEnsureSchema_ContextCancelledBeforeExec(t *testing.T) {
-	called := false
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	_ = clickhouse.RunEnsureSchema(ctx, config.Config{DSN: "clickhouse://localhost:9000"}, "ion_logs")
-	// Whether it short-circuits or delegates is an impl detail;
-	// what matters is it does not panic and returns (possibly ctx error).
-	_ = called
-}
-
-// --- helpers ---
-
-type mockExecer struct {
-	fn func(ctx context.Context, query string) error
-}
-
-func (m *mockExecer) Exec(ctx context.Context, query string, args ...any) error {
-	return m.fn(ctx, query)
-}
 

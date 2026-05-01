@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
 	clickhouse_errors "github.com/JupiterMetaLabs/ion/clickhouse/config/errors"
 )
 
@@ -13,10 +14,6 @@ type Config struct {
 	// DSN is the ClickHouse connection string. Required.
 	// Example: "clickhouse://user:pass@host:9000/dbname"
 	DSN string
-
-	// Database is the ClickHouse database name.
-	// Default: "default"
-	Database string
 
 	// Table is the ClickHouse table name for log entries.
 	// Default: "ion_logs"
@@ -48,6 +45,10 @@ type Config struct {
 	// Default: 10s
 	DialTimeout time.Duration
 
+	// WriteTimeout is the per-flush ClickHouse write timeout.
+	// Default: 30s
+	WriteTimeout time.Duration
+
 	// MaxOpenConns is the connection pool size.
 	// Default: 5
 	MaxOpenConns int
@@ -72,9 +73,6 @@ var validLevels = map[string]bool{
 // withDefaults returns a copy of cfg with zero-value fields filled with defaults.
 // User-supplied non-zero values are never overwritten.
 func (cfg Config) WithDefaults() Config {
-	if cfg.Database == "" {
-		cfg.Database = "default"
-	}
 	if cfg.Table == "" {
 		cfg.Table = "ion_logs"
 	}
@@ -92,6 +90,9 @@ func (cfg Config) WithDefaults() Config {
 	}
 	if cfg.DialTimeout == 0 {
 		cfg.DialTimeout = 10 * time.Second
+	}
+	if cfg.WriteTimeout == 0 {
+		cfg.WriteTimeout = 30 * time.Second
 	}
 	if cfg.MaxOpenConns == 0 {
 		cfg.MaxOpenConns = 5
