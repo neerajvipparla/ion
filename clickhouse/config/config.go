@@ -2,11 +2,14 @@ package config
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	clickhouse_errors "github.com/JupiterMetaLabs/ion/clickhouse/config/errors"
 )
+
+var validIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$`)
 
 // Config holds all configuration for the ClickHouse log sink.
 // Call New(cfg) to validate and apply defaults before use.
@@ -117,11 +120,35 @@ func (cfg Config) Validate() error {
 	if !validLevels[strings.ToLower(cfg.Level)] {
 		errs = append(errs, clickhouse_errors.ErrInvalidLevel.Error())
 	}
+	if cfg.Table != "" && !validIdentifier.MatchString(cfg.Table) {
+		errs = append(errs, clickhouse_errors.ErrInvalidTable.Error())
+	}
 	if cfg.BatchSize < 0 {
 		errs = append(errs, clickhouse_errors.ErrBatchSizeMustNotBeNegative.Error())
 	}
 	if cfg.ChannelBuffer < 0 {
 		errs = append(errs, clickhouse_errors.ErrChannelBufferMustNotBeNegative.Error())
+	}
+	if cfg.FlushInterval < 0 {
+		errs = append(errs, clickhouse_errors.ErrFlushIntervalMustNotBeNegative.Error())
+	}
+	if cfg.DialTimeout < 0 {
+		errs = append(errs, clickhouse_errors.ErrDialTimeoutMustNotBeNegative.Error())
+	}
+	if cfg.WriteTimeout < 0 {
+		errs = append(errs, clickhouse_errors.ErrWriteTimeoutMustNotBeNegative.Error())
+	}
+	if cfg.MaxOpenConns < 0 {
+		errs = append(errs, clickhouse_errors.ErrMaxOpenConnsMustNotBeNegative.Error())
+	}
+	if cfg.MaxIdleConns < 0 {
+		errs = append(errs, clickhouse_errors.ErrMaxIdleConnsMustNotBeNegative.Error())
+	}
+	if cfg.ConnMaxLifetime < 0 {
+		errs = append(errs, clickhouse_errors.ErrConnMaxLifetimeMustNotBeNegative.Error())
+	}
+	if cfg.MaxOpenConns > 0 && cfg.MaxIdleConns > cfg.MaxOpenConns {
+		errs = append(errs, clickhouse_errors.ErrMaxIdleConnsExceedsMaxOpenConns.Error())
 	}
 
 	if len(errs) == 0 {

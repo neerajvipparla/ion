@@ -15,22 +15,22 @@ import (
 // logRow is the internal representation of a single log entry
 // as it will be stored in ClickHouse.
 type logRow struct {
-	Timestamp  time.Time
-	Level      string
-	Service    string
-	Version    string
-	Logger     string
-	Message    string
-	TraceID    string
-	SpanID     string
-	RequestID  string
-	UserID     string
-	Caller     string
-	StrFields  map[string]string
-	IntFields  map[string]int64
-	FltFields  map[string]float64
-	BoolFields map[string]uint8
-	Extra      string // JSON object for overflow/complex field types
+	Timestamp  time.Time         `ch:"timestamp"`
+	Level      string            `ch:"level"`
+	Service    string            `ch:"service"`
+	Version    string            `ch:"version"`
+	Logger     string            `ch:"logger"`
+	Message    string            `ch:"message"`
+	TraceID    string            `ch:"trace_id"`
+	SpanID     string            `ch:"span_id"`
+	RequestID  string            `ch:"request_id"`
+	UserID     string            `ch:"user_id"`
+	Caller     string            `ch:"caller"`
+	StrFields  map[string]string  `ch:"str_fields"`
+	IntFields  map[string]int64   `ch:"int_fields"`
+	FltFields  map[string]float64 `ch:"flt_fields"`
+	BoolFields map[string]uint8   `ch:"bool_fields"`
+	Extra      string             `ch:"extra"`
 }
 
 // dedicatedKeys are field keys that map directly to top-level logRow columns
@@ -128,8 +128,23 @@ func extractRow(entry zapcore.Entry, fields []zapcore.Field) logRow {
 			}
 			row.IntFields[f.Key] = f.Integer
 
-		// --- Unsigned integers — value stored bit-for-bit in f.Integer ---
-		case zapcore.Uint64Type, zapcore.Uint32Type, zapcore.Uint16Type, zapcore.Uint8Type:
+		// --- Unsigned integers ---
+		// Uint64 values > math.MaxInt64 cannot round-trip through Int64 without
+		// becoming negative. Route them to overflow instead of silently corrupting.
+		case zapcore.Uint64Type:
+			if u := uint64(f.Integer); u > math.MaxInt64 {
+				if overflow == nil {
+					overflow = make(map[string]any)
+				}
+				overflow[f.Key] = u
+			} else {
+				if row.IntFields == nil {
+					row.IntFields = make(map[string]int64)
+				}
+				row.IntFields[f.Key] = f.Integer
+			}
+
+		case zapcore.Uint32Type, zapcore.Uint16Type, zapcore.Uint8Type:
 			if row.IntFields == nil {
 				row.IntFields = make(map[string]int64)
 			}
@@ -163,6 +178,46 @@ func extractRow(entry zapcore.Entry, fields []zapcore.Field) logRow {
 				}
 				overflow[f.Key] = err.Error()
 			}
+
+		// --- Time — stored as UnixNano in f.Integer, timezone in f.Interface ---
+		case zapcore.TimeType:
+			t := time.Unix(0, f.Integer)
+			if loc, ok := f.Interface.(*time.Location); ok && loc != nil {
+				t = t.In(loc)
+			}
+			if row.StrFields == nil {
+				row.StrFields = make(map[string]string)
+			}
+			row.StrFields[f.Key] = t.Format(time.RFC3339Nano)
+
+		// --- TimeFullType — full time.Time in f.Interface ---
+		case zapcore.TimeFullType:
+			if t, ok := f.Interface.(time.Time); ok {
+				if row.StrFields == nil {
+					row.StrFields = make(map[string]string)
+				}
+				row.StrFields[f.Key] = t.Format(time.RFC3339Nano)
+			}
+
+		// --- Complex numbers — json.Marshal cannot handle complex types ---
+		case zapcore.Complex128Type:
+			if c, ok := f.Interface.(complex128); ok {
+				if row.StrFields == nil {
+					row.StrFields = make(map[string]string)
+				}
+				row.StrFields[f.Key] = fmt.Sprintf("%v", c)
+			}
+
+		case zapcore.Complex64Type:
+			if c, ok := f.Interface.(complex64); ok {
+				if row.StrFields == nil {
+					row.StrFields = make(map[string]string)
+				}
+				row.StrFields[f.Key] = fmt.Sprintf("%v", c)
+			}
+
+		// --- Namespace — not representable in a flat Map schema ---
+		case zapcore.NamespaceType:
 
 		// --- Skip intentional no-ops ---
 		case zapcore.SkipType:

@@ -4,11 +4,15 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"regexp"
 
 	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 
 	"github.com/JupiterMetaLabs/ion/clickhouse/config"
 )
+
+// validIdentifier matches unquoted ClickHouse identifiers: optional db prefix, no special chars.
+var validIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$`)
 
 /*
 	Below line is used to embed the create table sql into the binary. its not a comment.
@@ -26,7 +30,13 @@ type schemaExecer interface {
 }
 
 // BuildDDL returns the CREATE TABLE IF NOT EXISTS DDL for the given table name.
+// Panics if table is not a valid unquoted SQL identifier (letters, digits, underscores;
+// optional db.table prefix). This is intentional: an invalid identifier at startup
+// is a misconfiguration bug, not a recoverable runtime error.
 func BuildDDL(table string) string {
+	if !validIdentifier.MatchString(table) {
+		panic(fmt.Sprintf("clickhouse: BuildDDL called with invalid table identifier %q", table))
+	}
 	return fmt.Sprintf(createTableSQL, table)
 }
 
