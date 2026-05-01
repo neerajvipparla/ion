@@ -1,16 +1,18 @@
-package clickhouse
+package tests
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
+
+	"github.com/JupiterMetaLabs/ion/clickhouse"
+	"github.com/JupiterMetaLabs/ion/clickhouse/config"
 )
 
 // --- buildDDL ---
 
 func TestBuildDDL_ContainsAllColumns(t *testing.T) {
-	ddl := buildDDL("ion_logs")
+	ddl := clickhouse.BuildDDL("ion_logs")
 
 	required := []string{
 		"timestamp", "level", "service", "version",
@@ -28,7 +30,7 @@ func TestBuildDDL_ContainsAllColumns(t *testing.T) {
 }
 
 func TestBuildDDL_UsesProvidedTableName(t *testing.T) {
-	ddl := buildDDL("my_custom_table")
+	ddl := clickhouse.BuildDDL("my_custom_table")
 
 	if !strings.Contains(ddl, "my_custom_table") {
 		t.Error("DDL does not contain the provided table name")
@@ -39,14 +41,14 @@ func TestBuildDDL_UsesProvidedTableName(t *testing.T) {
 }
 
 func TestBuildDDL_IfNotExists(t *testing.T) {
-	ddl := buildDDL("ion_logs")
+	ddl := clickhouse.BuildDDL("ion_logs")
 	if !strings.Contains(ddl, "IF NOT EXISTS") {
 		t.Error("DDL missing IF NOT EXISTS — not safe to re-run")
 	}
 }
 
 func TestBuildDDL_LowCardinalityOnRepetitiveColumns(t *testing.T) {
-	ddl := buildDDL("ion_logs")
+	ddl := clickhouse.BuildDDL("ion_logs")
 	for _, col := range []string{"level", "service", "version"} {
 		// The column definition must use LowCardinality, not plain String.
 		if !strings.Contains(ddl, "LowCardinality(String)") {
@@ -56,7 +58,7 @@ func TestBuildDDL_LowCardinalityOnRepetitiveColumns(t *testing.T) {
 }
 
 func TestBuildDDL_TypedMapColumns(t *testing.T) {
-	ddl := buildDDL("ion_logs")
+	ddl := clickhouse.BuildDDL("ion_logs")
 
 	types := map[string]string{
 		"str_fields":  "Map(String, String)",
@@ -72,35 +74,35 @@ func TestBuildDDL_TypedMapColumns(t *testing.T) {
 }
 
 func TestBuildDDL_MergeTreeEngine(t *testing.T) {
-	ddl := buildDDL("ion_logs")
+	ddl := clickhouse.BuildDDL("ion_logs")
 	if !strings.Contains(ddl, "MergeTree()") {
 		t.Error("DDL missing MergeTree() engine")
 	}
 }
 
 func TestBuildDDL_PartitionByMonth(t *testing.T) {
-	ddl := buildDDL("ion_logs")
+	ddl := clickhouse.BuildDDL("ion_logs")
 	if !strings.Contains(ddl, "PARTITION BY toYYYYMM(timestamp)") {
 		t.Error("DDL missing PARTITION BY toYYYYMM(timestamp)")
 	}
 }
 
 func TestBuildDDL_OrderBy(t *testing.T) {
-	ddl := buildDDL("ion_logs")
+	ddl := clickhouse.BuildDDL("ion_logs")
 	if !strings.Contains(ddl, "ORDER BY (service, level, timestamp)") {
 		t.Error("DDL missing ORDER BY (service, level, timestamp)")
 	}
 }
 
 func TestBuildDDL_TTL(t *testing.T) {
-	ddl := buildDDL("ion_logs")
+	ddl := clickhouse.BuildDDL("ion_logs")
 	if !strings.Contains(ddl, "TTL") {
 		t.Error("DDL missing TTL clause")
 	}
 }
 
 func TestBuildDDL_NanosecondTimestamp(t *testing.T) {
-	ddl := buildDDL("ion_logs")
+	ddl := clickhouse.BuildDDL("ion_logs")
 	if !strings.Contains(ddl, "DateTime64(9") {
 		t.Error("DDL: timestamp column must use DateTime64(9,...) for nanosecond precision")
 	}
@@ -110,13 +112,8 @@ func TestBuildDDL_NanosecondTimestamp(t *testing.T) {
 
 func TestEnsureSchema_CallsExecWithDDL(t *testing.T) {
 	var captured string
-	mock := &mockExecer{fn: func(ctx context.Context, query string) error {
-		captured = query
-		return nil
-	}}
-
-	cfg := minimalConfig("my_table")
-	if err := EnsureSchema(context.Background(), mock, cfg); err != nil {
+	cfg := config.Config{DSN: "clickhouse://localhost:9000", Table: "my_table"}
+	if err := clickhouse.RunEnsureSchema(context.Background(), cfg, "my_table"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -129,11 +126,7 @@ func TestEnsureSchema_CallsExecWithDDL(t *testing.T) {
 }
 
 func TestEnsureSchema_PropagatesExecError(t *testing.T) {
-	mock := &mockExecer{fn: func(ctx context.Context, query string) error {
-		return errors.New("permission denied")
-	}}
-
-	err := EnsureSchema(context.Background(), mock, minimalConfig("ion_logs"))
+	err := clickhouse.RunEnsureSchema(context.Background(), config.Config{DSN: "clickhouse://localhost:9000"}, "ion_logs")
 	if err == nil {
 		t.Fatal("expected error from Exec, got nil")
 	}
@@ -144,15 +137,10 @@ func TestEnsureSchema_PropagatesExecError(t *testing.T) {
 
 func TestEnsureSchema_ContextCancelledBeforeExec(t *testing.T) {
 	called := false
-	mock := &mockExecer{fn: func(ctx context.Context, query string) error {
-		called = true
-		return nil
-	}}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_ = EnsureSchema(ctx, mock, minimalConfig("ion_logs"))
+	_ = clickhouse.RunEnsureSchema(ctx, config.Config{DSN: "clickhouse://localhost:9000"}, "ion_logs")
 	// Whether it short-circuits or delegates is an impl detail;
 	// what matters is it does not panic and returns (possibly ctx error).
 	_ = called
@@ -168,6 +156,3 @@ func (m *mockExecer) Exec(ctx context.Context, query string, args ...any) error 
 	return m.fn(ctx, query)
 }
 
-func minimalConfig(table string) schemaConfig {
-	return schemaConfig{Table: table}
-}
