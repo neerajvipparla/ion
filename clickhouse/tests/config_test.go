@@ -167,66 +167,96 @@ func TestNew_ConnectsAndExposesConfig(t *testing.T) {
 // --- extended Validate() coverage ---
 
 func TestValidate_NegativeFlushInterval(t *testing.T) {
-	err := config.Config{DSN: "clickhouse://localhost:9000/default", FlushInterval: -1}.Validate()
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetFlushInterval(-1)
+	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected error for negative FlushInterval, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrFlushIntervalMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrFlushIntervalMustNotBeNegative)
 	}
 }
 
 func TestValidate_NegativeDialTimeout(t *testing.T) {
-	err := config.Config{DSN: "clickhouse://localhost:9000/default", DialTimeout: -1}.Validate()
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetDialTimeout(-1)
+	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected error for negative DialTimeout, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrDialTimeoutMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrDialTimeoutMustNotBeNegative)
 	}
 }
 
 func TestValidate_NegativeWriteTimeout(t *testing.T) {
-	err := config.Config{DSN: "clickhouse://localhost:9000/default", WriteTimeout: -1}.Validate()
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetWriteTimeout(-1)
+	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected error for negative WriteTimeout, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrWriteTimeoutMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrWriteTimeoutMustNotBeNegative)
 	}
 }
 
 func TestValidate_NegativeMaxOpenConns(t *testing.T) {
-	err := config.Config{DSN: "clickhouse://localhost:9000/default", MaxOpenConns: -1}.Validate()
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetMaxOpenConns(-1)
+	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected error for negative MaxOpenConns, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrMaxOpenConnsMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrMaxOpenConnsMustNotBeNegative)
 	}
 }
 
 func TestValidate_NegativeMaxIdleConns(t *testing.T) {
-	err := config.Config{DSN: "clickhouse://localhost:9000/default", MaxIdleConns: -1}.Validate()
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetMaxIdleConns(-1)
+	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected error for negative MaxIdleConns, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrMaxIdleConnsMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrMaxIdleConnsMustNotBeNegative)
 	}
 }
 
 func TestValidate_MaxIdleConnsExceedsMaxOpenConns(t *testing.T) {
-	err := config.Config{
-		DSN:          "clickhouse://localhost:9000/default",
-		MaxOpenConns: 3,
-		MaxIdleConns: 5,
-	}.Validate()
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetMaxOpenConns(3).SetMaxIdleConns(5)
+	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected error when MaxIdleConns > MaxOpenConns, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrMaxIdleConnsExceedsMaxOpenConns.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrMaxIdleConnsExceedsMaxOpenConns)
 	}
 }
 
 func TestValidate_NegativeConnMaxLifetime(t *testing.T) {
-	err := config.Config{DSN: "clickhouse://localhost:9000/default", ConnMaxLifetime: -1}.Validate()
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetConnMaxLifetime(-1)
+	err := cfg.Validate()
 	if err == nil {
 		t.Fatal("expected error for negative ConnMaxLifetime, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrConnMaxLifetimeMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrConnMaxLifetimeMustNotBeNegative)
 	}
 }
 
 func TestValidate_InvalidTableName(t *testing.T) {
-	cases := []string{"", "my-table", "my table", "1table", "'; DROP TABLE"}
+	// Empty table is not tested here: WithDefaults() fills it with "ion_logs".
+	// These cases exercise names that are syntactically invalid as SQL identifiers.
+	cases := []string{"my-table", "my table", "1table", "'; DROP TABLE"}
 	for _, table := range cases {
-		table := table
 		t.Run(fmt.Sprintf("%q", table), func(t *testing.T) {
-			err := config.Config{DSN: "clickhouse://localhost:9000/default", Table: table}.Validate()
+			cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults()
+			cfg.Table = table
+			err := cfg.Validate()
 			if err == nil {
 				t.Errorf("Validate() with table %q should return error, got nil", table)
+			}
+			if !strings.Contains(err.Error(), cherrors.ErrInvalidTable.Error()) {
+				t.Errorf("error %q missing sentinel %q", err, cherrors.ErrInvalidTable)
 			}
 		})
 	}

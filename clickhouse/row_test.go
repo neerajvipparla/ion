@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -275,6 +276,82 @@ func TestExtractRow_NoFieldsNoMapsAllocated(t *testing.T) {
 	}
 	if row.Extra != "" {
 		t.Errorf("Extra must be empty when no overflow fields: got %q", row.Extra)
+	}
+}
+
+// --- uint64 overflow ---
+
+func TestExtractRow_LargeUint64_GoesToExtra(t *testing.T) {
+	// math.MaxInt64+1 wraps to a negative int64 — silent data corruption
+	largeU64 := uint64(math.MaxInt64) + 1
+	row := extractRow(basicEntry(), []zapcore.Field{
+		{Key: "big", Type: zapcore.Uint64Type, Integer: int64(largeU64)},
+	})
+	if _, ok := row.IntFields["big"]; ok {
+		t.Error("large uint64 (> MaxInt64) must not be stored in IntFields — it would be negative")
+	}
+	if !strings.Contains(row.Extra, "big") {
+		t.Errorf("large uint64 must appear in Extra, got Extra=%q", row.Extra)
+	}
+}
+
+func TestExtractRow_SmallUint64_StaysInIntFields(t *testing.T) {
+	row := extractRow(basicEntry(), []zapcore.Field{
+		zap.Uint64("count", 42),
+	})
+	if row.IntFields["count"] != 42 {
+		t.Errorf("IntFields[count]: got %d, want 42", row.IntFields["count"])
+	}
+	if strings.Contains(row.Extra, "count") {
+		t.Error("small uint64 must not appear in Extra")
+	}
+}
+
+// --- time fields ---
+
+func TestExtractRow_TimeGoesToStrFields(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Nanosecond)
+	row := extractRow(basicEntry(), []zapcore.Field{
+		zap.Time("when", now),
+	})
+	if row.StrFields["when"] == "" {
+		t.Fatal("TimeType field missing from StrFields")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, row.StrFields["when"]); err != nil {
+		t.Errorf("StrFields[when] is not RFC3339Nano: %v (got %q)", err, row.StrFields["when"])
+	}
+}
+
+func TestExtractRow_TimeFullGoesToStrFields(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Nanosecond)
+	row := extractRow(basicEntry(), []zapcore.Field{
+		{Key: "when", Type: zapcore.TimeFullType, Interface: now},
+	})
+	if row.StrFields["when"] == "" {
+		t.Fatal("TimeFullType field missing from StrFields")
+	}
+}
+
+// --- complex numbers ---
+
+func TestExtractRow_Complex128GoesToStrFields(t *testing.T) {
+	row := extractRow(basicEntry(), []zapcore.Field{
+		zap.Complex128("c", 3+4i),
+	})
+	if row.StrFields["c"] == "" {
+		t.Fatal("Complex128 field missing from StrFields")
+	}
+	if !strings.Contains(row.StrFields["c"], "3") {
+		t.Errorf("StrFields[c] missing real part: got %q", row.StrFields["c"])
+	}
+}
+
+func TestExtractRow_Complex64GoesToStrFields(t *testing.T) {
+	row := extractRow(basicEntry(), []zapcore.Field{
+		zap.Complex64("c", 1+2i),
+	})
+	if row.StrFields["c"] == "" {
+		t.Fatal("Complex64 field missing from StrFields")
 	}
 }
 
