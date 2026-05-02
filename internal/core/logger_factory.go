@@ -45,6 +45,11 @@ func NewZapLogger(cfg config.Config) (*ZapFactoryResult, error) {
 		otelLevel = parseLevel(cfg.OTEL.Level)
 	}
 
+	chLevel := globalLevel
+	if cfg.ClickHouse.Level != "" {
+		chLevel = parseLevel(cfg.ClickHouse.Level)
+	}
+
 	// Calculate the minimum level across all ENABLED sinks.
 	// This ensures the main atomicLevel (used for SetLevel and early filtering)
 	// allows logs to pass if ANY sink needs them.
@@ -60,6 +65,9 @@ func NewZapLogger(cfg config.Config) (*ZapFactoryResult, error) {
 	}
 	if cfg.OTEL.Enabled && otelLevel < minLevel {
 		minLevel = otelLevel
+	}
+	if cfg.ClickHouse.Enabled && chLevel < minLevel {
+		minLevel = chLevel
 	}
 
 	// The atomicLevel acts as the master gatekeeper in logger_impl.go

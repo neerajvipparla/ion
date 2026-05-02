@@ -4,10 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/metric/noop"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
+	"github.com/JupiterMetaLabs/ion/internal/clickhouse"
 	"github.com/JupiterMetaLabs/ion/internal/core"
 )
 
@@ -57,6 +61,7 @@ type Ion struct {
 	tracingEnabled bool
 	meterProvider  *core.MeterProvider
 	metricsEnabled bool
+	chCore         *clickhouse.Core
 }
 
 // Warning represents a non-fatal initialization issue.
@@ -106,7 +111,28 @@ func New(cfg Config) (*Ion, []Warning, error) {
 		otelProvider: zapRes.OTELProvider,
 	}
 
-	// 2. Setup Tracing (OTEL Traces)
+	// 2. Setup ClickHouse sink
+	if cfg.ClickHouse.Enabled {
+		chCore, chErr := buildClickHouseCore(cfg)
+		if chErr != nil {
+			warnings = append(warnings, Warning{
+				Component: "clickhouse",
+				Err:       fmt.Errorf("failed to init clickhouse: %w (clickhouse disabled)", chErr),
+			})
+		} else {
+			ion.chCore = chCore
+			// Inject the CH core into the zap tee without touching internal/core.
+			// extractRow already drops the SentinelKey, but we wrap with filteringCore
+			// for consistency with the other sinks.
+			ion.zapLogger.zap = ion.zapLogger.zap.WithOptions(
+				zap.WrapCore(func(existing zapcore.Core) zapcore.Core {
+					return zapcore.NewTee(existing, core.NewFilteringCore(chCore, core.SentinelKey))
+				}),
+			)
+		}
+	}
+
+	// 3. Setup Tracing (OTEL Traces)
 	if cfg.Tracing.Enabled {
 		// Use Tracing endpoint or fallback to OTEL endpoint
 		if cfg.Tracing.Endpoint == "" {
@@ -153,7 +179,7 @@ func New(cfg Config) (*Ion, []Warning, error) {
 		}
 	}
 
-	// 3. Setup Metrics (OTEL Metrics)
+	// 4. Setup Metrics (OTEL Metrics)
 	if cfg.Metrics.Enabled {
 		// Use Metrics endpoint or fallback to OTEL endpoint
 		if cfg.Metrics.Endpoint == "" {
@@ -214,6 +240,7 @@ func (i *Ion) Named(name string) Logger {
 		tracingEnabled: i.tracingEnabled,
 		meterProvider:  i.meterProvider,
 		metricsEnabled: i.metricsEnabled,
+		chCore:         i.chCore,
 	}
 }
 
@@ -233,6 +260,7 @@ func (i *Ion) With(fields ...Field) Logger {
 		tracingEnabled: i.tracingEnabled,
 		meterProvider:  i.meterProvider,
 		metricsEnabled: i.metricsEnabled,
+		chCore:         i.chCore,
 	}
 }
 
@@ -264,6 +292,7 @@ func (i *Ion) Child(name string, fields ...Field) *Ion {
 		tracingEnabled: i.tracingEnabled,
 		meterProvider:  i.meterProvider,
 		metricsEnabled: i.metricsEnabled,
+		chCore:         i.chCore,
 	}
 }
 
@@ -303,6 +332,18 @@ func newNoopMeter() metric.Meter {
 	return noop.NewMeterProvider().Meter("noop")
 }
 
+// DroppedCount returns the total number of log entries dropped by the ClickHouse
+// sink since startup. A non-zero value means the async write buffer filled up
+// faster than ClickHouse could flush — tune BatchSize, FlushInterval, or
+// ChannelBuffer to reduce back-pressure.
+// Returns 0 if ClickHouse is not enabled.
+func (i *Ion) DroppedCount() int64 {
+	if i.chCore == nil {
+		return 0
+	}
+	return i.chCore.DroppedCount()
+}
+
 // --- Lifecycle ---
 
 // Shutdown gracefully shuts down all observability subsystems in order:
@@ -330,6 +371,12 @@ func (i *Ion) Shutdown(ctx context.Context) error {
 		}
 	}
 
+	if i.chCore != nil {
+		if err := i.chCore.Shutdown(ctx); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
 	if i.zapLogger != nil {
 		if err := i.zapLogger.Shutdown(ctx); err != nil && firstErr == nil {
 			firstErr = err
@@ -337,4 +384,26 @@ func (i *Ion) Shutdown(ctx context.Context) error {
 	}
 
 	return firstErr
+}
+
+// buildClickHouseCore constructs and opens a ClickHouse core from ion Config.
+// Returns an error (treated as warning by the caller) if the core cannot be started.
+func buildClickHouseCore(cfg Config) (*clickhouse.Core, error) {
+	// Inherit global level when the ClickHouse-specific level is not set.
+	chCfg := cfg.ClickHouse
+	if chCfg.Level == "" {
+		chCfg.Level = cfg.Level
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	chCore, err := clickhouse.New(ctx, chCfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := chCore.Open(ctx); err != nil {
+		return nil, err
+	}
+	return chCore, nil
 }

@@ -1,0 +1,286 @@
+package tests
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/JupiterMetaLabs/ion/internal/clickhouse"
+	"github.com/JupiterMetaLabs/ion/internal/clickhouse/config"
+	cherrors "github.com/JupiterMetaLabs/ion/internal/clickhouse/config/errors"
+)
+
+// --- Validate() — no connection required ---
+
+func TestValidate_EmptyDSN(t *testing.T) {
+	err := config.Config{}.Validate()
+	if err == nil {
+		t.Fatal("expected error for empty DSN, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrInvalidDSN.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrInvalidDSN)
+	}
+}
+
+func TestValidate_InvalidLevel(t *testing.T) {
+	err := config.Config{DSN: "clickhouse://localhost:9000/default", Level: "nonsense"}.Validate()
+	if err == nil {
+		t.Fatal("expected error for invalid level, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrInvalidLevel.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrInvalidLevel)
+	}
+}
+
+func TestValidate_NegativeBatchSize(t *testing.T) {
+	err := config.Config{DSN: "clickhouse://localhost:9000/default", BatchSize: -1}.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative BatchSize, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrBatchSizeMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrBatchSizeMustNotBeNegative)
+	}
+}
+
+func TestValidate_NegativeChannelBuffer(t *testing.T) {
+	err := config.Config{DSN: "clickhouse://localhost:9000/default", ChannelBuffer: -1}.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative ChannelBuffer, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrChannelBufferMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrChannelBufferMustNotBeNegative)
+	}
+}
+
+func TestValidate_ValidConfig(t *testing.T) {
+	// WithDefaults() must precede Validate() — same order New() uses internally.
+	err := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().Validate()
+	if err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+}
+
+// New() propagates validation errors before it ever pings.
+
+func TestNew_RejectsInvalidConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  config.Config
+	}{
+		{"empty DSN", config.Config{}},
+		{"invalid level", config.Config{DSN: "clickhouse://localhost:9000/default", Level: "bad"}},
+		{"negative batch size", config.Config{DSN: "clickhouse://localhost:9000/default", BatchSize: -1}},
+		{"negative channel buffer", config.Config{DSN: "clickhouse://localhost:9000/default", ChannelBuffer: -1}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := clickhouse.New(context.Background(), tc.cfg)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+		})
+	}
+}
+
+// --- WithDefaults() — no connection required ---
+
+func TestDefaults_AppliedOnZeroValues(t *testing.T) {
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults()
+
+	checks := []struct {
+		field string
+		got   any
+		want  any
+	}{
+		{"Table", cfg.Table, "ion_logs"},
+		{"Level", cfg.Level, "info"},
+		{"BatchSize", cfg.BatchSize, 1000},
+		{"FlushInterval", cfg.FlushInterval, 5 * time.Second},
+		{"ChannelBuffer", cfg.ChannelBuffer, 10000},
+		{"DialTimeout", cfg.DialTimeout, 10 * time.Second},
+		{"WriteTimeout", cfg.WriteTimeout, 30 * time.Second},
+		{"MaxOpenConns", cfg.MaxOpenConns, 5},
+		{"MaxIdleConns", cfg.MaxIdleConns, 5},
+		{"ConnMaxLifetime", cfg.ConnMaxLifetime, time.Hour},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s: got %v, want %v", c.field, c.got, c.want)
+		}
+	}
+}
+
+func TestDefaults_UserValuesNotOverwritten(t *testing.T) {
+	cfg := config.Config{
+		DSN:           "clickhouse://localhost:9000/default",
+		Table:         "my_logs",
+		Level:         "debug",
+		BatchSize:     500,
+		FlushInterval: 2 * time.Second,
+		ChannelBuffer: 5000,
+		MaxOpenConns:  10,
+	}.WithDefaults()
+
+	checks := []struct {
+		field string
+		got   any
+		want  any
+	}{
+		{"Table", cfg.Table, "my_logs"},
+		{"Level", cfg.Level, "debug"},
+		{"BatchSize", cfg.BatchSize, 500},
+		{"FlushInterval", cfg.FlushInterval, 2 * time.Second},
+		{"ChannelBuffer", cfg.ChannelBuffer, 5000},
+		{"MaxOpenConns", cfg.MaxOpenConns, 10},
+	}
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s overwritten: got %v, want %v", c.field, c.got, c.want)
+		}
+	}
+}
+
+// --- Integration: New() success requires a live ClickHouse ---
+// Skipped automatically when CLICKHOUSE_TEST_DSN is not set.
+
+func TestNew_ConnectsAndExposesConfig(t *testing.T) {
+	dsn := os.Getenv("CLICKHOUSE_TEST_DSN")
+	if dsn == "" {
+		t.Skip("CLICKHOUSE_TEST_DSN not set — skipping integration test")
+	}
+
+	core, err := clickhouse.New(context.Background(), config.Config{DSN: dsn})
+	if err != nil {
+		t.Fatalf("New() failed: %v", err)
+	}
+	if core == nil {
+		t.Fatal("expected non-nil Core")
+	}
+	if core.Config.DSN != dsn {
+		t.Errorf("Config.DSN: got %q, want %q", core.Config.DSN, dsn)
+	}
+}
+
+// --- extended Validate() coverage ---
+
+func TestValidate_NegativeFlushInterval(t *testing.T) {
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetFlushInterval(-1)
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative FlushInterval, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrFlushIntervalMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrFlushIntervalMustNotBeNegative)
+	}
+}
+
+func TestValidate_NegativeDialTimeout(t *testing.T) {
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetDialTimeout(-1)
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative DialTimeout, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrDialTimeoutMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrDialTimeoutMustNotBeNegative)
+	}
+}
+
+func TestValidate_NegativeWriteTimeout(t *testing.T) {
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetWriteTimeout(-1)
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative WriteTimeout, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrWriteTimeoutMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrWriteTimeoutMustNotBeNegative)
+	}
+}
+
+func TestValidate_NegativeMaxOpenConns(t *testing.T) {
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetMaxOpenConns(-1)
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative MaxOpenConns, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrMaxOpenConnsMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrMaxOpenConnsMustNotBeNegative)
+	}
+}
+
+func TestValidate_NegativeMaxIdleConns(t *testing.T) {
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetMaxIdleConns(-1)
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative MaxIdleConns, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrMaxIdleConnsMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrMaxIdleConnsMustNotBeNegative)
+	}
+}
+
+func TestValidate_MaxIdleConnsExceedsMaxOpenConns(t *testing.T) {
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetMaxOpenConns(3).SetMaxIdleConns(5)
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error when MaxIdleConns > MaxOpenConns, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrMaxIdleConnsExceedsMaxOpenConns.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrMaxIdleConnsExceedsMaxOpenConns)
+	}
+}
+
+func TestValidate_NegativeConnMaxLifetime(t *testing.T) {
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults().SetConnMaxLifetime(-1)
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative ConnMaxLifetime, got nil")
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrConnMaxLifetimeMustNotBeNegative.Error()) {
+		t.Errorf("error %q missing sentinel %q", err, cherrors.ErrConnMaxLifetimeMustNotBeNegative)
+	}
+}
+
+func TestValidate_EmptyLevelIsAccepted(t *testing.T) {
+	// Validate() must not error on empty Level — empty means "will use default".
+	// Callers who don't call WithDefaults() should not get a spurious ErrInvalidLevel.
+	err := config.Config{DSN: "clickhouse://localhost:9000/default", BatchSize: -1}.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative BatchSize, got nil")
+	}
+	if strings.Contains(err.Error(), cherrors.ErrInvalidLevel.Error()) {
+		t.Errorf("Validate() with empty Level must not return ErrInvalidLevel; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrBatchSizeMustNotBeNegative.Error()) {
+		t.Errorf("expected ErrBatchSizeMustNotBeNegative in error; got: %v", err)
+	}
+}
+
+func TestValidate_WarningLevelIsAccepted(t *testing.T) {
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults()
+	cfg.Level = "warning"
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() rejected 'warning' level: %v", err)
+	}
+}
+
+func TestValidate_InvalidTableName(t *testing.T) {
+	// Empty table is not tested here: WithDefaults() fills it with "ion_logs".
+	// These cases exercise names that are syntactically invalid as SQL identifiers.
+	cases := []string{"my-table", "my table", "1table", "'; DROP TABLE"}
+	for _, table := range cases {
+		t.Run(fmt.Sprintf("%q", table), func(t *testing.T) {
+			cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults()
+			cfg.Table = table
+			err := cfg.Validate()
+			if err == nil {
+				t.Errorf("Validate() with table %q should return error, got nil", table)
+			}
+			if !strings.Contains(err.Error(), cherrors.ErrInvalidTable.Error()) {
+				t.Errorf("error %q missing sentinel %q", err, cherrors.ErrInvalidTable)
+			}
+		})
+	}
+}

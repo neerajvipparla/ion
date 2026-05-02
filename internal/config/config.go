@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	clickhouseconfig "github.com/JupiterMetaLabs/ion/internal/clickhouse/config"
 )
 
 // Config holds the complete logger configuration.
@@ -42,6 +44,9 @@ type Config struct {
 
 	// Metrics configuration for OpenTelemetry metrics.
 	Metrics MetricsConfig `yaml:"metrics" json:"metrics"`
+
+	// ClickHouse log sink configuration.
+	ClickHouse clickhouseconfig.Config `yaml:"clickhouse" json:"clickhouse"`
 }
 
 // ConsoleConfig configures console (stdout/stderr) output.
@@ -270,6 +275,14 @@ func Default() Config {
 			Temporality: "cumulative",     // Prometheus-compatible
 			// Endpoint, Protocol, Auth inherited from OTEL if empty
 		},
+		ClickHouse: clickhouseconfig.Config{
+			Enabled: false,
+			DSN:     "",
+			Table:   "ion_logs",
+			BatchSize: 1000,
+			FlushInterval: 500 * time.Millisecond,
+			ChannelBuffer: 50000,
+		},
 	}
 }
 
@@ -332,6 +345,13 @@ func (c Config) WithTracing(endpoint string) Config {
 	if endpoint != "" {
 		c.Tracing.Endpoint = endpoint
 	}
+	return c
+}
+
+func (c Config) WithClickHouse(dsn string) Config {
+	c.ClickHouse.Enabled = true
+	c.ClickHouse.DSN = dsn
+	c.ClickHouse.WithDefaults()
 	return c
 }
 
@@ -403,6 +423,11 @@ func (c Config) Validate() error {
 		errs = append(errs, fmt.Sprintf("invalid tracing protocol %q (use: grpc, http)", c.Tracing.Protocol))
 	}
 
+	// Validate ClickHouse config
+	if c.ClickHouse.Enabled && c.ClickHouse.DSN == "" {
+		errs = append(errs, "clickhouse enabled but DSN is empty")
+	}
+
 	// Validate metrics config
 	if c.Metrics.Enabled {
 		if c.Metrics.Endpoint == "" && c.OTEL.Endpoint == "" {
@@ -430,9 +455,13 @@ func (c Config) Validate() error {
 	if c.OTEL.Level != "" && !validLevels[strings.ToLower(c.OTEL.Level)] {
 		errs = append(errs, fmt.Sprintf("invalid otel level %q", c.OTEL.Level))
 	}
+	if c.ClickHouse.Level != "" && !validLevels[strings.ToLower(c.ClickHouse.Level)] {
+		errs = append(errs, fmt.Sprintf("invalid clickhouse level %q", c.ClickHouse.Level))
+	}
 
 	if len(errs) > 0 {
 		return fmt.Errorf("config validation failed: %s", strings.Join(errs, "; "))
 	}
 	return nil
 }
+
