@@ -9,7 +9,7 @@ import (
 	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/JupiterMetaLabs/ion/clickhouse/config"
+	"github.com/JupiterMetaLabs/ion/internal/clickhouse/config"
 )
 
 // Core is a zapcore.Core that writes log entries to ClickHouse.

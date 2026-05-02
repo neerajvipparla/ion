@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JupiterMetaLabs/ion/clickhouse"
-	"github.com/JupiterMetaLabs/ion/clickhouse/config"
+	"github.com/JupiterMetaLabs/ion/internal/clickhouse"
+	"github.com/JupiterMetaLabs/ion/internal/clickhouse/config"
 
 	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 )

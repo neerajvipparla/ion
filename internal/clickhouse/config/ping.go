@@ -5,7 +5,7 @@ import (
 	"errors"
 
 	chdriver "github.com/ClickHouse/clickhouse-go/v2"
-	clickhouse_errors "github.com/JupiterMetaLabs/ion/clickhouse/config/errors"
+	clickhouse_errors "github.com/JupiterMetaLabs/ion/internal/clickhouse/config/errors"
 )
 
 // Ping opens a temporary connection to ClickHouse using the given DSN,

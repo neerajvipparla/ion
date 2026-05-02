@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/JupiterMetaLabs/ion/clickhouse"
+	"github.com/JupiterMetaLabs/ion/internal/clickhouse"
 )
 
 // --- buildDDL ---

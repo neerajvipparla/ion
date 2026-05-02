@@ -1,7 +1,7 @@
 package ion
 
 import (
-	clickhouseconfig "github.com/JupiterMetaLabs/ion/clickhouse/config"
+	clickhouseconfig "github.com/JupiterMetaLabs/ion/internal/clickhouse/config"
 	"github.com/JupiterMetaLabs/ion/internal/config"
 )
 

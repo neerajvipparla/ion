@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/JupiterMetaLabs/ion/clickhouse"
+	"github.com/JupiterMetaLabs/ion/internal/clickhouse"
 	"github.com/JupiterMetaLabs/ion/internal/core"
 )
 

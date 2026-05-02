@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	clickhouseconfig "github.com/JupiterMetaLabs/ion/clickhouse/config"
+	clickhouseconfig "github.com/JupiterMetaLabs/ion/internal/clickhouse/config"
 )
 
 // Config holds the complete logger configuration.
