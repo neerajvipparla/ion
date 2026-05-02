@@ -8,3 +8,4 @@ examples/otel-test/otel-test
 *.exe
 
 temp/
+examples/clickhouse-simulator/*

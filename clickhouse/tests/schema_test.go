@@ -108,7 +108,7 @@ func TestEnsureSchema_Idempotent(t *testing.T) {
 	cfg := config.Config{DSN: dsn}
 
 	// Running twice must not error — CREATE TABLE IF NOT EXISTS guarantees this
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		if err := clickhouse.RunEnsureSchema(context.Background(), cfg, table); err != nil {
 			t.Fatalf("EnsureSchema run %d: %v", i+1, err)
 		}

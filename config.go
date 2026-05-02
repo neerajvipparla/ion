@@ -1,6 +1,7 @@
 package ion
 
 import (
+	clickhouseconfig "github.com/JupiterMetaLabs/ion/clickhouse/config"
 	"github.com/JupiterMetaLabs/ion/internal/config"
 )
 
@@ -22,6 +23,9 @@ type TracingConfig = config.TracingConfig
 
 // MetricsConfig configures OpenTelemetry metrics export.
 type MetricsConfig = config.MetricsConfig
+
+// ClickHouseConfig configures the ClickHouse log sink.
+type ClickHouseConfig = clickhouseconfig.Config
 
 // Default returns a Config with sensible production defaults.
 func Default() Config {

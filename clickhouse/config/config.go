@@ -14,8 +14,12 @@ var validIdentifier = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-
 // Config holds all configuration for the ClickHouse log sink.
 // Call New(cfg) to validate and apply defaults before use.
 type Config struct {
-	// DSN is the ClickHouse connection string. Required.
-	// Example: "clickhouse://user:pass@host:9000/dbname"
+	// Enabled controls whether the ClickHouse sink is active.
+	// Default: false
+	Enabled bool
+
+	// DSN is the ClickHouse connection string. Required when Enabled.
+	// Example: "http://user:pass@host:8123/db", "clickhouse://user:pass@host:9000/db"
 	DSN string
 
 	// Table is the ClickHouse table name for log entries.
@@ -66,11 +70,12 @@ type Config struct {
 }
 
 var validLevels = map[string]bool{
-	"debug": true,
-	"info":  true,
-	"warn":  true,
-	"error": true,
-	"fatal": true,
+	"debug":   true,
+	"info":    true,
+	"warn":    true,
+	"warning": true,
+	"error":   true,
+	"fatal":   true,
 }
 
 // withDefaults returns a copy of cfg with zero-value fields filled with defaults.
@@ -117,7 +122,7 @@ func (cfg Config) Validate() error {
 	if cfg.DSN == "" {
 		errs = append(errs, clickhouse_errors.ErrInvalidDSN.Error())
 	}
-	if !validLevels[strings.ToLower(cfg.Level)] {
+	if cfg.Level != "" && !validLevels[strings.ToLower(cfg.Level)] {
 		errs = append(errs, clickhouse_errors.ErrInvalidLevel.Error())
 	}
 	if cfg.Table != "" && !validIdentifier.MatchString(cfg.Table) {

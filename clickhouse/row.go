@@ -170,6 +170,17 @@ func extractRow(entry zapcore.Entry, fields []zapcore.Field) logRow {
 			}
 			row.BoolFields[f.Key] = uint8(f.Integer) //nolint:gosec // Integer is always 0 or 1 for BoolType
 
+		// --- ByteString — []byte that represents a valid UTF-8 string ---
+		// zap.ByteString() uses this type. JSON encoders treat it as a string,
+		// not as binary (base64). Route to StrFields for consistency.
+		case zapcore.ByteStringType:
+			if b, ok := f.Interface.([]byte); ok {
+				if row.StrFields == nil {
+					row.StrFields = make(map[string]string)
+				}
+				row.StrFields[f.Key] = string(b)
+			}
+
 		// --- Overflow: error message as plain string ---
 		case zapcore.ErrorType:
 			if err, ok := f.Interface.(error); ok {

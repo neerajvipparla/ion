@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"gopkg.in/natefinch/lumberjack.v2"
+
+	clickhouseconfig "github.com/JupiterMetaLabs/ion/clickhouse/config"
 )
 
 // Config holds the complete logger configuration.
@@ -42,6 +44,9 @@ type Config struct {
 
 	// Metrics configuration for OpenTelemetry metrics.
 	Metrics MetricsConfig `yaml:"metrics" json:"metrics"`
+
+	// ClickHouse log sink configuration.
+	ClickHouse clickhouseconfig.Config `yaml:"clickhouse" json:"clickhouse"`
 }
 
 // ConsoleConfig configures console (stdout/stderr) output.
@@ -335,6 +340,13 @@ func (c Config) WithTracing(endpoint string) Config {
 	return c
 }
 
+// WithClickHouse returns a copy of the config with the ClickHouse log sink enabled.
+func (c Config) WithClickHouse(dsn string) Config {
+	c.ClickHouse.Enabled = true
+	c.ClickHouse.DSN = dsn
+	return c
+}
+
 // WithMetrics returns a copy of the config with metrics enabled.
 func (c Config) WithMetrics(endpoint string) Config {
 	c.Metrics.Enabled = true
@@ -403,6 +415,11 @@ func (c Config) Validate() error {
 		errs = append(errs, fmt.Sprintf("invalid tracing protocol %q (use: grpc, http)", c.Tracing.Protocol))
 	}
 
+	// Validate ClickHouse config
+	if c.ClickHouse.Enabled && c.ClickHouse.DSN == "" {
+		errs = append(errs, "clickhouse enabled but DSN is empty")
+	}
+
 	// Validate metrics config
 	if c.Metrics.Enabled {
 		if c.Metrics.Endpoint == "" && c.OTEL.Endpoint == "" {
@@ -429,6 +446,9 @@ func (c Config) Validate() error {
 	}
 	if c.OTEL.Level != "" && !validLevels[strings.ToLower(c.OTEL.Level)] {
 		errs = append(errs, fmt.Sprintf("invalid otel level %q", c.OTEL.Level))
+	}
+	if c.ClickHouse.Level != "" && !validLevels[strings.ToLower(c.ClickHouse.Level)] {
+		errs = append(errs, fmt.Sprintf("invalid clickhouse level %q", c.ClickHouse.Level))
 	}
 
 	if len(errs) > 0 {

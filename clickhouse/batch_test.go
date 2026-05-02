@@ -24,7 +24,7 @@ func TestBatchWriter_FlushesOnBatchSize(t *testing.T) {
 	bw.start()
 	defer bw.shutdown()
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		bw.send(testLogRow())
 	}
 
@@ -78,7 +78,7 @@ func TestBatchWriter_ShutdownFlushesRemaining(t *testing.T) {
 	})
 	bw.start()
 
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		bw.send(testLogRow())
 	}
 	bw.shutdown()
@@ -102,7 +102,7 @@ func TestBatchWriter_DropsWhenFull(t *testing.T) {
 	})
 	bw.start()
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		bw.send(testLogRow())
 	}
 
@@ -207,7 +207,7 @@ func TestBatchWriter_FlushErrorIncrementsDropped(t *testing.T) {
 	bw.start()
 	defer bw.shutdown()
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		bw.send(testLogRow())
 	}
 
@@ -271,7 +271,7 @@ func TestBatchWriter_BatchSizeSpansMultipleFlushes(t *testing.T) {
 	bw.start()
 	defer bw.shutdown()
 
-	for i := 0; i < 6; i++ {
+	for range 6 {
 		bw.send(testLogRow())
 	}
 

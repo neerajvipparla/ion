@@ -132,6 +132,29 @@ func TestExtractRow_DurationGoesToStrFields(t *testing.T) {
 	}
 }
 
+func TestExtractRow_ByteStringGoesToStrFields(t *testing.T) {
+	row := extractRow(basicEntry(), []zapcore.Field{
+		zap.ByteString("token", []byte("abc123")),
+	})
+	if row.StrFields["token"] != "abc123" {
+		t.Errorf("StrFields[token]: got %q, want %q", row.StrFields["token"], "abc123")
+	}
+}
+
+func TestExtractRow_StringerGoesToStrFields(t *testing.T) {
+	row := extractRow(basicEntry(), []zapcore.Field{
+		zap.Stringer("addr", netIPStringer("127.0.0.1")),
+	})
+	if row.StrFields["addr"] != "127.0.0.1" {
+		t.Errorf("StrFields[addr]: got %q, want %q", row.StrFields["addr"], "127.0.0.1")
+	}
+}
+
+// netIPStringer is a minimal fmt.Stringer for use in Stringer test.
+type netIPStringer string
+
+func (n netIPStringer) String() string { return string(n) }
+
 // --- overflow types → Extra JSON ---
 
 func TestExtractRow_ErrorGoesToExtra(t *testing.T) {

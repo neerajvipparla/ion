@@ -44,7 +44,11 @@ func New(ctx context.Context, cfg config.Config) (*Core, error) {
 
 // Open opens a persistent ClickHouse connection, optionally creates the table
 // (when AutoSchema is true), and starts the background flush goroutine.
+// Returns an error if called on an already-open Core.
 func (c *Core) Open(ctx context.Context) error {
+	if c.conn != nil {
+		return errors.New("clickhouse core: already open")
+	}
 	opts, err := chdriver.ParseDSN(c.Config.DSN)
 	if err != nil {
 		return fmt.Errorf("clickhouse core: parse DSN: %w", err)
@@ -95,7 +99,9 @@ func (c *Core) Shutdown(ctx context.Context) error {
 		}
 	}
 	if c.conn != nil {
-		return c.conn.Close() //nolint:wrapcheck // direct driver close
+		err := c.conn.Close() //nolint:wrapcheck // direct driver close
+		c.conn = nil
+		return err
 	}
 	return nil
 }

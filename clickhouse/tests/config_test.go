@@ -243,6 +243,29 @@ func TestValidate_NegativeConnMaxLifetime(t *testing.T) {
 	}
 }
 
+func TestValidate_EmptyLevelIsAccepted(t *testing.T) {
+	// Validate() must not error on empty Level — empty means "will use default".
+	// Callers who don't call WithDefaults() should not get a spurious ErrInvalidLevel.
+	err := config.Config{DSN: "clickhouse://localhost:9000/default", BatchSize: -1}.Validate()
+	if err == nil {
+		t.Fatal("expected error for negative BatchSize, got nil")
+	}
+	if strings.Contains(err.Error(), cherrors.ErrInvalidLevel.Error()) {
+		t.Errorf("Validate() with empty Level must not return ErrInvalidLevel; got: %v", err)
+	}
+	if !strings.Contains(err.Error(), cherrors.ErrBatchSizeMustNotBeNegative.Error()) {
+		t.Errorf("expected ErrBatchSizeMustNotBeNegative in error; got: %v", err)
+	}
+}
+
+func TestValidate_WarningLevelIsAccepted(t *testing.T) {
+	cfg := config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults()
+	cfg.Level = "warning"
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() rejected 'warning' level: %v", err)
+	}
+}
+
 func TestValidate_InvalidTableName(t *testing.T) {
 	// Empty table is not tested here: WithDefaults() fills it with "ion_logs".
 	// These cases exercise names that are syntactically invalid as SQL identifiers.

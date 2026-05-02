@@ -6,8 +6,11 @@ import (
 	"testing"
 	"time"
 
+	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/JupiterMetaLabs/ion/clickhouse/config"
 )
 
 // coreWithWriter builds a Core backed by a fake batchWriter — no real ClickHouse needed.
@@ -238,6 +241,38 @@ func TestCore_Shutdown_RespectsContextDeadline(t *testing.T) {
 
 // --- DroppedCount ---
 
+func TestCore_Open_GuardsAgainstDoubleOpen(t *testing.T) {
+	// Simulate an already-open Core by assigning a non-nil conn.
+	// dummyConn embeds the interface so it satisfies it without implementing methods.
+	type dummyConn struct{ chdriver.Conn }
+	c := &Core{
+		Config: config.Config{DSN: "clickhouse://localhost:9000/default"}.WithDefaults(),
+		level:  zapcore.InfoLevel,
+		conn:   dummyConn{},
+	}
+	err := c.Open(context.Background())
+	if err == nil {
+		t.Fatal("Open on already-open Core should return error, got nil")
+	}
+}
+
+func TestCore_Shutdown_IsIdempotent(t *testing.T) {
+	bw := newBatchWriter(batchConfig{
+		BatchSize:     1,
+		FlushInterval: time.Second,
+		ChannelBuffer: 10,
+	}, func([]logRow) error { return nil })
+	bw.start()
+	c := &Core{level: zapcore.InfoLevel, writer: bw}
+	ctx := context.Background()
+	if err := c.Shutdown(ctx); err != nil {
+		t.Fatalf("first Shutdown: %v", err)
+	}
+	if err := c.Shutdown(ctx); err != nil {
+		t.Fatalf("second Shutdown: %v", err)
+	}
+}
+
 func TestCore_DroppedCount_ReflectsWriterDrops(t *testing.T) {
 	block := make(chan struct{})
 	bw := newBatchWriter(batchConfig{
@@ -251,7 +286,7 @@ func TestCore_DroppedCount_ReflectsWriterDrops(t *testing.T) {
 	bw.start()
 	c := &Core{level: zapcore.InfoLevel, writer: bw}
 
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		_ = c.Write(basicEntry(), nil)
 	}
 
