@@ -73,7 +73,6 @@ var validLevels = map[string]bool{
 	"debug":   true,
 	"info":    true,
 	"warn":    true,
-	"warning": true,
 	"error":   true,
 	"fatal":   true,
 }

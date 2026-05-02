@@ -275,6 +275,14 @@ func Default() Config {
 			Temporality: "cumulative",     // Prometheus-compatible
 			// Endpoint, Protocol, Auth inherited from OTEL if empty
 		},
+		ClickHouse: clickhouseconfig.Config{
+			Enabled: false,
+			DSN:     "",
+			Table:   "ion_logs",
+			BatchSize: 1000,
+			FlushInterval: 500 * time.Millisecond,
+			ChannelBuffer: 50000,
+		},
 	}
 }
 
@@ -340,10 +348,10 @@ func (c Config) WithTracing(endpoint string) Config {
 	return c
 }
 
-// WithClickHouse returns a copy of the config with the ClickHouse log sink enabled.
 func (c Config) WithClickHouse(dsn string) Config {
 	c.ClickHouse.Enabled = true
 	c.ClickHouse.DSN = dsn
+	c.ClickHouse.WithDefaults()
 	return c
 }
 
@@ -456,3 +464,4 @@ func (c Config) Validate() error {
 	}
 	return nil
 }
+
