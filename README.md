@@ -296,6 +296,7 @@ Ion uses a comprehensive configuration struct for behavior control. This maps 1:
 | `OTEL` | `OTELConfig` | `Enabled: false` | Configuration for remote OpenTelemetry logging. |
 | `Tracing` | `TracingConfig` | `Enabled: false` | Configuration for distributed tracing. |
 | `Metrics` | `MetricsConfig` | `Enabled: false` | Configuration for OpenTelemetry metrics. |
+| `ClickHouse` | `ClickHouseConfig` | `Enabled: false` | Configuration for ClickHouse analytics log sink. |
 
 ### Console Configuration (`ion.ConsoleConfig`)
 
@@ -347,6 +348,77 @@ Controls the OpenTelemetry **Trace** Provider. Empty fields inherit from `OTELCo
 | `Protocol` | `string` | `"grpc"` | Inherits `OTEL.Protocol` if empty. |
 | `Username` | `string` | `""` | Inherits `OTEL.Username` if empty. |
 | `Password` | `string` | `""` | Inherits `OTEL.Password` if empty. |
+
+### ClickHouse Configuration (`ion.ClickHouseConfig`)
+
+Ion can write every log entry to a ClickHouse table in parallel with console/file/OTEL output. The sink is fully asynchronous — log calls return immediately and a background goroutine batches rows to ClickHouse. This enables fast analytical queries over log data (e.g., "error rate per validator in the last 5 minutes") that are not possible with Loki.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Enabled` | `bool` | `false` | Enables the ClickHouse sink. |
+| `DSN` | `string` | `""` | Connection string. **Required when enabled.** `"http://user:pass@host:8123/db"` or `"clickhouse://user:pass@host:9000/db"`. |
+| `Table` | `string` | `"ion_logs"` | Target table name. Must be a valid unquoted SQL identifier. |
+| `Level` | `string` | `""` | Minimum level for this sink. Inherits global `Level` if empty. |
+| `BatchSize` | `int` | `1000` | Max rows per flush. Larger batches → fewer TCP writes, higher latency. |
+| `FlushInterval` | `Duration` | `5s` | How often the background flusher sends pending rows. |
+| `ChannelBuffer` | `int` | `10000` | Async queue depth. Entries are dropped (not blocked) when full. |
+| `AutoSchema` | `bool` | `false` | Run `CREATE TABLE IF NOT EXISTS` on startup. Set `true` for dev; manage DDL yourself in production. |
+| `DialTimeout` | `Duration` | `10s` | Connection dial timeout. |
+| `WriteTimeout` | `Duration` | `30s` | Per-flush write timeout. |
+| `MaxOpenConns` | `int` | `5` | Connection pool size. |
+| `MaxIdleConns` | `int` | `5` | Idle connections kept open. |
+| `ConnMaxLifetime` | `Duration` | `1h` | Max connection reuse duration. |
+
+#### Table Schema
+
+Ion creates the following table when `AutoSchema = true`. You can also run the DDL manually before deployment:
+
+```sql
+CREATE TABLE IF NOT EXISTS ion_logs
+(
+    timestamp   DateTime64(9, 'UTC'),          -- nanosecond precision
+    level       LowCardinality(String),        -- dictionary-encoded, fast WHERE
+    service     LowCardinality(String),
+    version     LowCardinality(String),
+    logger      String,
+    message     String,
+    trace_id    String,
+    span_id     String,
+    request_id  String,
+    user_id     String,
+    caller      String,
+    str_fields  Map(String, String),           -- ion.String() fields
+    int_fields  Map(String, Int64),            -- ion.Int64(), ion.Uint64() fields
+    flt_fields  Map(String, Float64),          -- ion.Float64() fields
+    bool_fields Map(String, UInt8),            -- ion.Bool() fields (0/1)
+    extra       String                         -- JSON bag for errors, structs
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(timestamp)
+ORDER BY (service, level, timestamp)
+TTL timestamp + INTERVAL 30 DAY DELETE
+SETTINGS index_granularity = 8192;
+```
+
+**Schema design:** `LowCardinality` on `level`/`service`/`version` gives ~10× storage reduction for high-cardinality repeated strings. Typed map columns (`int_fields`, `flt_fields`) allow index pushdown on `WHERE int_fields['block_height'] > 19000000` without string casting. The `extra` column is a JSON escape hatch for complex Go types (errors, structs) and is not indexed.
+
+#### Monitoring Back-Pressure
+
+```go
+app, _, _ := ion.New(cfg)
+
+// DroppedCount returns the total entries dropped due to a full channel buffer.
+// A rising value means the buffer is filling faster than the flusher can drain it.
+dropped := app.DroppedCount()
+```
+
+Tuning guide:
+
+| Symptom | Cause | Action |
+|---------|-------|--------|
+| `DroppedCount()` rising | Buffer filling faster than it is flushed | Decrease `FlushInterval` (flush more often), increase `BatchSize` (flush more rows per write), and increase `ChannelBuffer` (more room before drops occur) |
+| Flush errors in stderr | ClickHouse unreachable | Fix connectivity; rows during downtime are lost |
+| Memory growth | `ChannelBuffer` too large | Decrease `ChannelBuffer` |
 
 ### Metrics Configuration (`ion.MetricsConfig`)
 
