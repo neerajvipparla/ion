@@ -103,3 +103,151 @@ func TestProcessEndpoint(t *testing.T) {
 		})
 	}
 }
+func TestInjectAuth(t *testing.T) {
+	tests := []struct {
+		name       string
+		headers    map[string]string
+		username   string
+		password   string
+		protocol   string
+		wantKey    string
+		wantValue  string
+		wantLength int
+	}{
+		{
+			name:       "Header-First priority over Basic Auth (capitalized)",
+			headers:    map[string]string{"Authorization": "Bearer pre-existing-token"},
+			username:   "user",
+			password:   "pass",
+			protocol:   "http",
+			wantKey:    "Authorization",
+			wantValue:  "Bearer pre-existing-token",
+			wantLength: 1,
+		},
+		{
+			name:       "Header-First priority over Basic Auth (lowercase)",
+			headers:    map[string]string{"authorization": "Bearer lower-token"},
+			username:   "user",
+			password:   "pass",
+			protocol:   "grpc",
+			wantKey:    "authorization",
+			wantValue:  "Bearer lower-token",
+			wantLength: 1,
+		},
+		{
+			name:       "Basic Auth fallback when no token is in headers",
+			headers:    nil,
+			username:   "user",
+			password:   "pass",
+			protocol:   "http",
+			wantKey:    "Authorization",
+			wantValue:  "Basic dXNlcjpwYXNz",
+			wantLength: 1,
+		},
+		{
+			name:       "gRPC uses lowercase authorization for Basic Auth and custom tokens",
+			headers:    map[string]string{"Authorization": "Bearer test-grpc-token"},
+			username:   "",
+			password:   "",
+			protocol:   "grpc",
+			wantKey:    "authorization", // normalized to lower case by the function
+			wantValue:  "Bearer test-grpc-token",
+			wantLength: 1,
+		},
+		{
+			name:       "No auth info",
+			headers:    nil,
+			protocol:   "http",
+			wantLength: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Copy the original input to ensure immutability is respected
+			originalInput := make(map[string]string)
+			for k, v := range tt.headers {
+				originalInput[k] = v
+			}
+
+			got := injectAuth(tt.headers, tt.username, tt.password, tt.protocol)
+
+			// 1. Verify Immutability
+			if tt.headers != nil {
+				if len(originalInput) != len(tt.headers) {
+					t.Errorf("injectAuth() mutated original input length! Expected %v, got %v", len(originalInput), len(tt.headers))
+				}
+				for k, v := range originalInput {
+					if tt.headers[k] != v {
+						t.Errorf("injectAuth() mutated original input value for key %q", k)
+					}
+				}
+			}
+
+			// 2. Verify Output
+			if len(got) != tt.wantLength {
+				t.Errorf("injectAuth() length = %v, want %v", len(got), tt.wantLength)
+				return
+			}
+			if tt.wantLength > 0 {
+				if val, ok := got[tt.wantKey]; !ok || val != tt.wantValue {
+					t.Errorf("injectAuth() %s = %v, want %v. out map: %+v", tt.wantKey, val, tt.wantValue, got)
+				}
+			}
+		})
+	}
+}
+
+func TestParseSampler(t *testing.T) {
+	tests := []struct {
+		name    string
+		sampler string
+		// Since sdktrace.Sampler is an interface, we can verify its description
+		wantDesc string
+	}{
+		{
+			name:     "Empty defaults to AlwaysOn",
+			sampler:  "",
+			wantDesc: "AlwaysOnSampler",
+		},
+		{
+			name:     "Explicit always",
+			sampler:  "always",
+			wantDesc: "AlwaysOnSampler",
+		},
+		{
+			name:     "Explicit never",
+			sampler:  "never",
+			wantDesc: "AlwaysOffSampler",
+		},
+		{
+			name:     "Valid ratio",
+			sampler:  "ratio:0.15",
+			wantDesc: "TraceIDRatioBased{0.15}",
+		},
+		{
+			name:     "Invalid ratio format falls back to AlwaysOn",
+			sampler:  "ratio:not-a-number",
+			wantDesc: "AlwaysOnSampler",
+		},
+		{
+			name:     "Unknown string falls back to AlwaysOn",
+			sampler:  "random_string",
+			wantDesc: "AlwaysOnSampler",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseSampler(tt.sampler)
+			if got == nil {
+				t.Fatal("parseSampler() returned nil")
+			}
+
+			desc := got.Description()
+			if desc != tt.wantDesc {
+				t.Errorf("parseSampler() description = %v, want %v", desc, tt.wantDesc)
+			}
+		})
+	}
+}

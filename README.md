@@ -329,8 +329,8 @@ Controls the OpenTelemetry **Logs** Exporter. Tracing and Metrics inherit `Endpo
 | `Endpoint` | `string` | `""` | `host:port` or URL. URL schemes override `Insecure` setting. |
 | `Protocol` | `string` | `"grpc"` | `"grpc"` (recommended) or `"http"`. |
 | `Insecure` | `bool` | `false` | Disables TLS (dev only). Ignored if Endpoint starts with `https://`. |
-| `Username` | `string` | `""` | Basic Auth username. |
-| `Password` | `string` | `""` | Basic Auth password. |
+| `Username` | `string` | `""` | Basic Auth username. (Fallback for VPC) |
+| `Password` | `string` | `""` | Basic Auth password. (Fallback for VPC) |
 | `BatchSize` | `int` | `512` | Max logs per export batch. |
 | `ExportInterval` | `Duration` | `5s` | Flush interval. |
 | `Level` | `string` | `""` | Optional override for OTEL log level. |
@@ -418,6 +418,19 @@ cfg.OTEL.Protocol = "grpc"
 cfg := ion.Default()
 cfg.Console.Format = "systemd"
 cfg.Console.ErrorsToStderr = true
+```
+
+### Full Configuration with Token Auth
+
+```go
+cfg := ion.Default()
+cfg.OTEL.Enabled = true
+cfg.OTEL.Endpoint = "otel.jmdt.io:443"
+cfg.OTEL.Headers = map[string]string{
+    "Authorization": "Bearer 89658fc8a43d1a39cde4c59d1e2772194a8e2b533d53f93ca29659f40972980f",
+}
+cfg.Tracing.Enabled = true
+cfg.Metrics.Enabled = true
 ```
 
 ### Full Stack (Kubernetes)

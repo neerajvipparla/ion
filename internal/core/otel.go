@@ -83,6 +83,7 @@ func SetupLogProvider(cfg config.OTELConfig, serviceName, version string) (*LogP
 		resource.WithHost(),
 		resource.WithOS(),
 		resource.WithProcess(),
+		resource.WithTelemetrySDK(),
 		resource.WithAttributes(attrs...),
 	)
 	if err != nil {
@@ -95,12 +96,10 @@ func SetupLogProvider(cfg config.OTELConfig, serviceName, version string) (*LogP
 	if err != nil {
 		return nil, fmt.Errorf("invalid OTEL endpoint: %w", err)
 	}
+	// Inject Auth header logic: Preferred Headers > Basic Auth fallback
+	cfg.Headers = injectAuth(cfg.Headers, cfg.Username, cfg.Password, cfg.Protocol)
 
 	var exporter sdklog.Exporter
-
-	// Inject Basic Auth header if credentials provided
-	cfg.Headers = injectBasicAuth(cfg.Headers, cfg.Username, cfg.Password, cfg.Protocol)
-
 	switch cfg.Protocol {
 	case "http":
 		exporter, err = createHTTPLogExporter(ctx, endpoint, insecure, cfg)
@@ -116,6 +115,13 @@ func SetupLogProvider(cfg config.OTELConfig, serviceName, version string) (*LogP
 	if batchSize <= 0 {
 		batchSize = 512
 	}
+	// A robust queue size buffers telemetry against momentary network latency or throughput spikes.
+	// We use 4x the batch size or the OTEL standard 2048, whichever is larger, to prevent premature drops.
+	queueSize := batchSize * 4
+	if queueSize < 2048 {
+		queueSize = 2048
+	}
+
 	exportInterval := cfg.ExportInterval
 	if exportInterval <= 0 {
 		exportInterval = 5 * time.Second
@@ -123,7 +129,7 @@ func SetupLogProvider(cfg config.OTELConfig, serviceName, version string) (*LogP
 
 	processor := sdklog.NewBatchProcessor(
 		exporter,
-		sdklog.WithMaxQueueSize(batchSize*2),
+		sdklog.WithMaxQueueSize(queueSize),
 		sdklog.WithExportMaxBatchSize(batchSize),
 		sdklog.WithExportInterval(exportInterval),
 	)
@@ -144,15 +150,18 @@ func SetupTracerProvider(cfg config.TracingConfig, serviceName, version string) 
 	if !cfg.Enabled {
 		return nil, nil
 	}
-
-	// Inject Basic Auth header if credentials provided
-	cfg.Headers = injectBasicAuth(cfg.Headers, cfg.Username, cfg.Password, cfg.Protocol)
+	// Inject Auth header logic: Preferred Headers > Basic Auth fallback
+	cfg.Headers = injectAuth(cfg.Headers, cfg.Username, cfg.Password, cfg.Protocol)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	// Resource
 	res, err := resource.New(ctx,
+		resource.WithHost(),
+		resource.WithOS(),
+		resource.WithProcess(),
+		resource.WithTelemetrySDK(),
 		resource.WithAttributes(
 			semconv.ServiceName(serviceName),
 			semconv.ServiceVersion(version),
@@ -188,6 +197,12 @@ func SetupTracerProvider(cfg config.TracingConfig, serviceName, version string) 
 	if batchSize <= 0 {
 		batchSize = 512
 	}
+	// A robust queue size buffers telemetry against momentary network latency or throughput spikes.
+	queueSize := batchSize * 4
+	if queueSize < 2048 {
+		queueSize = 2048
+	}
+
 	exportInterval := cfg.ExportInterval
 	if exportInterval <= 0 {
 		exportInterval = 5 * time.Second
@@ -196,6 +211,7 @@ func SetupTracerProvider(cfg config.TracingConfig, serviceName, version string) 
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithResource(res),
 		sdktrace.WithBatcher(exporter,
+			sdktrace.WithMaxQueueSize(queueSize),
 			sdktrace.WithMaxExportBatchSize(batchSize),
 			sdktrace.WithBatchTimeout(exportInterval),
 		),
@@ -346,23 +362,45 @@ func processEndpoint(endpoint string, configInsecure bool) (string, bool, error)
 	return host, insecure, nil
 }
 
-// injectBasicAuth adds a Basic Authorization header to the provided headers map
-// if username and password are provided. Returns the updated headers map.
-// Protocol should be "http" or "grpc" - gRPC requires lowercase "authorization" key.
-func injectBasicAuth(headers map[string]string, username, password, protocol string) map[string]string {
-	if headers == nil {
-		headers = make(map[string]string)
+// injectAuth ensures the provided headers map contains appropriate authentication credentials.
+// It returns a newly allocated map to guarantee the original configuration remains immutable.
+//
+// Hierarchy:
+// 1. Header-First: If the provided headers map already contains an "Authorization" (or "authorization") key, it is preserved.
+// 2. Basic Auth Fallback: If no authorization header is present, it constructs a Basic Auth credential using the provided username and password.
+//
+// Protocol should be "http" or "grpc". gRPC requires the lowercase "authorization" key to comply with HTTP/2 and gRPC metadata semantics.
+func injectAuth(headers map[string]string, username, password, protocol string) map[string]string {
+	// Deep copy to ensure we do not mutate shared configuration maps across components
+	out := make(map[string]string, len(headers)+1)
+	for k, v := range headers {
+		out[k] = v
 	}
+
+	key := "Authorization"
+	altKey := "authorization"
+	if protocol != "http" {
+		key = "authorization"
+		altKey = "Authorization"
+	}
+
+	// 1. Header-First: Check if authentication is already explicitly provided in the headers
+	if _, hasPrimary := out[key]; hasPrimary {
+		return out
+	}
+	if val, hasAlt := out[altKey]; hasAlt {
+		// Normalize to the protocol's required case
+		out[key] = val
+		delete(out, altKey)
+		return out
+	}
+
+	// 2. Fallback: Generate Basic Auth if credentials are provided
 	if username != "" && password != "" {
 		auth := fmt.Sprintf("%s:%s", username, password)
 		encodedAuth := base64.StdEncoding.EncodeToString([]byte(auth))
-
-		// Use lowercase "authorization" for gRPC to comply with HTTP/2 and gRPC metadata specs.
-		key := "Authorization"
-		if protocol != "http" {
-			key = "authorization"
-		}
-		headers[key] = "Basic " + encodedAuth
+		out[key] = "Basic " + encodedAuth
 	}
-	return headers
+
+	return out
 }
