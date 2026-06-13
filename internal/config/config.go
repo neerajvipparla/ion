@@ -55,7 +55,8 @@ type ConsoleConfig struct {
 	// Default: true
 	Enabled bool `yaml:"enabled" json:"enabled"`
 
-	// Format: "json" for structured JSON, "pretty" for human-readable.
+	// Format: "json" for structured JSON, "pretty" for human-readable,
+	// or "systemd" for Journald-optimized output.
 	// Default: "json" (production), "pretty" (development)
 	Format string `yaml:"format" json:"format"`
 
@@ -121,13 +122,17 @@ type OTELConfig struct {
 	// Default: false
 	Insecure bool `yaml:"insecure" json:"insecure"`
 
-	// Username for Basic Authentication (optional).
+	// Username is used for HTTP Basic Authentication if required by the OTLP endpoint.
 	Username string `yaml:"username" json:"username" env:"OTEL_USERNAME"`
 
-	// Password for Basic Authentication (optional).
+	// Password is used for HTTP Basic Authentication if required by the OTLP endpoint.
 	Password string `yaml:"password" json:"password" env:"OTEL_PASSWORD"` //nolint:gosec // Required for configuration binding
 
-	// Headers are additional headers to send (e.g., auth tokens).
+	// Headers are custom headers to send to the exporter.
+	// This map is the standard mechanism for injecting Bearer tokens, API keys, or custom
+	// routing headers (e.g., {"Authorization": "Bearer <token>"}).
+	// Note: If an Authorization header is explicitly provided here, it will automatically
+	// supersede the Username and Password configuration.
 	Headers map[string]string `yaml:"headers" json:"headers"`
 
 	// Timeout is the export timeout.
@@ -166,13 +171,13 @@ type TracingConfig struct {
 	// Insecure disables TLS.
 	Insecure bool `yaml:"insecure" json:"insecure"`
 
-	// Username for Basic Authentication (optional).
+	// Username is used for HTTP Basic Authentication if required by the OTLP endpoint.
 	Username string `yaml:"username" json:"username" env:"TRACING_USERNAME"`
 
-	// Password for Basic Authentication (optional).
+	// Password is used for HTTP Basic Authentication if required by the OTLP endpoint.
 	Password string `yaml:"password" json:"password" env:"TRACING_PASSWORD"` //nolint:gosec // Required for configuration binding
 
-	// Headers for authentication.
+	// Headers are custom headers for authentication (supersedes Username/Password if Authorization is set).
 	Headers map[string]string `yaml:"headers" json:"headers"`
 
 	// Timeout for export.
@@ -209,13 +214,13 @@ type MetricsConfig struct {
 	// Insecure disables TLS.
 	Insecure bool `yaml:"insecure" json:"insecure"`
 
-	// Username for Basic Authentication (optional).
+	// Username is used for HTTP Basic Authentication if required by the OTLP endpoint.
 	Username string `yaml:"username" json:"username" env:"METRICS_USERNAME"`
 
-	// Password for Basic Authentication (optional).
+	// Password is used for HTTP Basic Authentication if required by the OTLP endpoint.
 	Password string `yaml:"password" json:"password" env:"METRICS_PASSWORD"` //nolint:gosec // Required for configuration binding
 
-	// Headers for authentication.
+	// Headers are custom headers for authentication (supersedes Username/Password if Authorization is set).
 	Headers map[string]string `yaml:"headers" json:"headers"`
 
 	// Timeout for export.

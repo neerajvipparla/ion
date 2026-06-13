@@ -75,8 +75,8 @@ func NewZapLogger(cfg config.Config) (*ZapFactoryResult, error) {
 
 	// 1. Setup OTEL if enabled
 	if cfg.OTEL.Enabled && cfg.OTEL.Endpoint != "" {
-		// Inject Basic Auth header if credentials provided
-		cfg.OTEL.Headers = injectBasicAuth(cfg.OTEL.Headers, cfg.OTEL.Username, cfg.OTEL.Password, cfg.OTEL.Protocol)
+		// Inject Auth header logic: Preferred Headers > Basic Auth fallback
+		cfg.OTEL.Headers = injectAuth(cfg.OTEL.Headers, cfg.OTEL.Username, cfg.OTEL.Password, cfg.OTEL.Protocol)
 
 		otelProvider, err = SetupLogProvider(cfg.OTEL, cfg.ServiceName, cfg.Version)
 		if err != nil {

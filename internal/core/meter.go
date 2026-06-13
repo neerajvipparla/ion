@@ -59,8 +59,8 @@ func SetupMeterProvider(cfg config.MetricsConfig, serviceName, version string) (
 		return nil, fmt.Errorf("failed to create OTEL resource: %w", err)
 	}
 
-	// Inject Basic Auth header if credentials provided
-	headers := injectBasicAuth(cfg.Headers, cfg.Username, cfg.Password, cfg.Protocol)
+	// Inject Auth header logic: Preferred Headers > Basic Auth fallback
+	headers := injectAuth(cfg.Headers, cfg.Username, cfg.Password, cfg.Protocol)
 
 	// Parse/Sanitize endpoint
 	endpoint, insecure, err := processEndpoint(cfg.Endpoint, cfg.Insecure)
