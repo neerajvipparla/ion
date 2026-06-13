@@ -14,7 +14,7 @@
 //	)
 package fields
 
-import "github.com/JupiterMetaLabs/ion"
+import "github.com/neerajvipparla/ion"
 
 // --- Transaction Fields -----------------------------------------------------
 

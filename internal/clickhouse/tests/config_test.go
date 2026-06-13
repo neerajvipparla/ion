@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JupiterMetaLabs/ion/internal/clickhouse"
-	"github.com/JupiterMetaLabs/ion/internal/clickhouse/config"
-	cherrors "github.com/JupiterMetaLabs/ion/internal/clickhouse/config/errors"
+	"github.com/neerajvipparla/ion/internal/clickhouse"
+	"github.com/neerajvipparla/ion/internal/clickhouse/config"
+	cherrors "github.com/neerajvipparla/ion/internal/clickhouse/config/errors"
 )
 
 // --- Validate() — no connection required ---

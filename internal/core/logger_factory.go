@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/JupiterMetaLabs/ion/internal/config"
+	"github.com/neerajvipparla/ion/internal/config"
 )
 
 // ZapFactoryResult holds the result of constructing the zap logger.

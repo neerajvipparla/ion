@@ -1,8 +1,8 @@
 package ion
 
 import (
-	clickhouseconfig "github.com/JupiterMetaLabs/ion/internal/clickhouse/config"
-	"github.com/JupiterMetaLabs/ion/internal/config"
+	clickhouseconfig "github.com/neerajvipparla/ion/internal/clickhouse/config"
+	"github.com/neerajvipparla/ion/internal/config"
 )
 
 // Config holds the complete logger configuration.

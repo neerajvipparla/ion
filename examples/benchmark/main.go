@@ -19,8 +19,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/JupiterMetaLabs/ion"
-	"github.com/JupiterMetaLabs/ion/fields"
+	"github.com/neerajvipparla/ion"
+	"github.com/neerajvipparla/ion/fields"
 )
 
 func main() {

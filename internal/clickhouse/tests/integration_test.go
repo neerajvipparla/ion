@@ -12,8 +12,8 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/JupiterMetaLabs/ion/internal/clickhouse"
-	"github.com/JupiterMetaLabs/ion/internal/clickhouse/config"
+	"github.com/neerajvipparla/ion/internal/clickhouse"
+	"github.com/neerajvipparla/ion/internal/clickhouse/config"
 )
 
 // integrationDSN returns the test DSN or skips the test.

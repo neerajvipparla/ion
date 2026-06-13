@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/JupiterMetaLabs/ion/internal/clickhouse/config"
+	"github.com/neerajvipparla/ion/internal/clickhouse/config"
 )
 
 // coreWithWriter builds a Core backed by a fake batchWriter — no real ClickHouse needed.

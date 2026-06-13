@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/JupiterMetaLabs/ion/internal/core"
+	"github.com/neerajvipparla/ion/internal/core"
 )
 
 // --- entry-level fields ---

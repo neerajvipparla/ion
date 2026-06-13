@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/JupiterMetaLabs/ion"
-	"github.com/JupiterMetaLabs/ion/fields"
+	"github.com/neerajvipparla/ion"
+	"github.com/neerajvipparla/ion/fields"
 )
 
 // ============================================================================
