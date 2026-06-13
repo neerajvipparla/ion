@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JupiterMetaLabs/ion/internal/clickhouse/config"
+	"github.com/neerajvipparla/ion/internal/clickhouse/config"
 )
 
 func TestPing_MalformedDSN(t *testing.T) {

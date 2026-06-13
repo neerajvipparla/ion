@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc"
 	insecurecreds "google.golang.org/grpc/credentials/insecure"
 
-	"github.com/JupiterMetaLabs/ion/internal/config"
+	"github.com/neerajvipparla/ion/internal/config"
 )
 
 // MeterProvider wraps the OTEL MeterProvider.

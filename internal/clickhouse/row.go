@@ -9,7 +9,7 @@ import (
 
 	"go.uber.org/zap/zapcore"
 
-	"github.com/JupiterMetaLabs/ion/internal/core"
+	"github.com/neerajvipparla/ion/internal/core"
 )
 
 // logRow is the internal representation of a single log entry

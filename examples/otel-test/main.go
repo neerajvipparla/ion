@@ -15,7 +15,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/JupiterMetaLabs/ion"
+	"github.com/neerajvipparla/ion"
 )
 
 func main() {

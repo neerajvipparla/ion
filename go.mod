@@ -1,4 +1,4 @@
-module github.com/JupiterMetaLabs/ion
+module github.com/neerajvipparla/ion
 
 go 1.25.0
 

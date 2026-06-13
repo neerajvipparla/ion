@@ -8,7 +8,7 @@ import (
 
 	chdriver "github.com/ClickHouse/clickhouse-go/v2"
 
-	"github.com/JupiterMetaLabs/ion/internal/clickhouse/config"
+	"github.com/neerajvipparla/ion/internal/clickhouse/config"
 )
 
 // validIdentifier matches unquoted ClickHouse identifiers: optional db prefix, no special chars.
